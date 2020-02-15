@@ -1,0 +1,83 @@
+package db.ava.util
+
+import com.badlogic.ashley.core.Component
+import com.badlogic.ashley.core.Engine
+import com.badlogic.ashley.core.Entity
+import com.badlogic.ashley.core.PooledEngine
+import ktx.ashley.AshleyDsl
+import kotlin.reflect.KClass
+
+/**
+ * An [Entity] created by the provided [Engine].
+ *
+ * Provides methods for adding [Component]s to the [Engine] and the [Entity].
+ *
+ * @property engine the [Engine] providing [Components][Component].
+ * @property entity the [Entity] to add [Components][Component] to.
+ */
+@AshleyDsl
+class EngineEntity(
+    val engine: PooledEngine,
+    val entity: Entity) {
+
+    /**
+     * Get or creates an instance of the component [T] and adds it to this [entity][EngineEntity].
+     *
+     * @param T the [Component] type to get or create.
+     * @param configure inlined function with [T] as the receiver to allow additional configuration of the [Component].
+     * @return the created ƒ[Component].
+     * @throws [CreateComponentException] if the engine was unable to create the component
+     * @see [create]
+     */
+    inline fun <reified T : Component> with(configure: (@AshleyDsl T).() -> Unit = {}): T {
+        val component = engine.create<T>()
+        component.configure()
+        entity.add(component)
+        return component
+    }
+}
+
+/**
+ * Get or create a [Component] by calling [Engine.createComponent].
+ *
+ * The [Component] must have a visible no-arg constructor.
+ *
+ * @param T the type of [Component] to get or create.
+ * @param configure inlined function with [T] as the receiver to allow further configuration.
+ * @return an [Component] instance of the selected type.
+ * @throws [CreateComponentException] if the engine was unable to create the component
+ */
+inline fun <reified T : Component> PooledEngine.create(configure: T.() -> Unit = {}): T {
+    return try {
+        createComponent(T::class.java) ?: throw NullPointerException("The component of ${T::class.java} type is null.")
+    } catch (exception: Throwable) {
+        throw CreateComponentException(T::class, exception)
+    }.apply(configure)
+}
+
+/**
+ * Builder function for [Engine].
+ *
+ * @param configure inlined function with *this* [Engine] as the receiver to allow further configuration.
+ */
+inline fun PooledEngine.add(configure: (@AshleyDsl PooledEngine).() -> Unit) = configure()
+
+/**
+ * Create and add an [Entity] to the [Engine].
+ *
+ * @param configure inlined function with the created [Entity] as the receiver to allow further configuration of
+ *  the [Entity]. The [Entity] holds the [Entity] created and the [Engine] that created it.
+ * @return the created [Entity].
+ */
+inline fun PooledEngine.entity(configure: EngineEntity.() -> Unit = {}): Entity {
+    val entity = createEntity()
+    EngineEntity(this, entity).configure()
+    addEntity(entity)
+    return entity
+}
+
+/**
+ * Thrown when unable to create a component of given type.
+ */
+class CreateComponentException(type: KClass<*>, cause: Throwable? = null): RuntimeException(
+    "Could not create component ${type.javaObjectType} - is a visible no-arg constructor available?", cause)
